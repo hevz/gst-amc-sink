@@ -1,4 +1,4 @@
-# Copyright (C) 2014 The Android Open Source Project
+# Copyright (C) 2020 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 #
 
 APP_OPTIM := release
-APP_PLATFORM := android-16
-APP_ABI := armeabi-v7a
-APP_CFLAGS := -O3 -mfpu=neon
-NDK_TOOLCHAIN_VERSION := 4.8
+APP_PLATFORM := android-21
+APP_ABI := armeabi-v7a arm64-v8a x86 x86_64
+APP_CFLAGS := -O3
