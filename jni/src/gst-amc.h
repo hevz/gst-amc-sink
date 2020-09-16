@@ -24,6 +24,8 @@
 #include <jni.h>
 #include <gst/gst.h>
 
+#include "gst-jni-utils.h"
+
 G_BEGIN_DECLS
 
 enum
@@ -41,19 +43,12 @@ enum
 };
 
 typedef struct _GstAmcCodec GstAmcCodec;
-typedef struct _GstAmcBuffer GstAmcBuffer;
 typedef struct _GstAmcFormat GstAmcFormat;
 typedef struct _GstAmcBufferInfo GstAmcBufferInfo;
 
 struct _GstAmcCodec {
   /* < private > */
   jobject object; /* global reference */
-};
-
-struct _GstAmcBuffer {
-  jobject object; /* global reference */
-  guint8 *data;
-  gsize size;
 };
 
 struct _GstAmcFormat {
@@ -101,13 +96,13 @@ gchar * gst_amc_format_to_string (GstAmcFormat * format, GError **err);
 gboolean gst_amc_format_contains_key (GstAmcFormat *format, const gchar *key, GError **err);
 
 gboolean gst_amc_format_get_float (GstAmcFormat *format, const gchar *key, gfloat *value, GError **err);
-void gst_amc_format_set_float (GstAmcFormat *format, const gchar *key, gfloat value, GError **err);
+gboolean gst_amc_format_set_float (GstAmcFormat *format, const gchar *key, gfloat value, GError **err);
 gboolean gst_amc_format_get_int (GstAmcFormat *format, const gchar *key, gint *value, GError **err);
-void gst_amc_format_set_int (GstAmcFormat *format, const gchar *key, gint value, GError **err);
+gboolean gst_amc_format_set_int (GstAmcFormat *format, const gchar *key, gint value, GError **err);
 gboolean gst_amc_format_get_string (GstAmcFormat *format, const gchar *key, gchar **value, GError **err);
-void gst_amc_format_set_string (GstAmcFormat *format, const gchar *key, const gchar *value, GError **err);
+gboolean gst_amc_format_set_string (GstAmcFormat *format, const gchar *key, const gchar *value, GError **err);
 gboolean gst_amc_format_get_buffer (GstAmcFormat *format, const gchar *key, guint8 **data, gsize *size, GError **err);
-void gst_amc_format_set_buffer (GstAmcFormat *format, const gchar *key, guint8 *data, gsize size, GError **err);
+gboolean gst_amc_format_set_buffer (GstAmcFormat *format, const gchar *key, guint8 *data, gsize size, GError **err);
 
 
 #define GST_ELEMENT_ERROR_FROM_ERROR(el, err) G_STMT_START { \
