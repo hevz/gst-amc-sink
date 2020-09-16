@@ -54,12 +54,14 @@ jfieldID gst_amc_jni_get_static_field_id     (JNIEnv * env,
 
 jobject gst_amc_jni_new_object               (JNIEnv * env,
                                              GError ** err,
+                                             gboolean global,
                                              jclass klass,
                                              jmethodID constructor,
                                              ...);
 
 jobject gst_amc_jni_new_object_from_static   (JNIEnv * env,
                                              GError ** err,
+                                             gboolean global,
                                              jclass klass,
                                              jmethodID constructor,
                                              ...);
@@ -82,6 +84,7 @@ gchar *gst_amc_jni_string_to_gchar           (JNIEnv * env,
 
 jstring gst_amc_jni_string_from_gchar        (JNIEnv * env,
                                              GError ** err,
+                                             gboolean global,
                                              const gchar * string);
 
 G_GNUC_PRINTF (5, 6)
