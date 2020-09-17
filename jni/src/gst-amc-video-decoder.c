@@ -16,6 +16,16 @@
 GST_DEBUG_CATEGORY_STATIC (gst_amc_video_decoder_debug);
 #define GST_CAT_DEFAULT gst_amc_video_decoder_debug
 
+#define GST_VIDEO_DECODER_ERROR_FROM_ERROR(el, err) G_STMT_START { \
+  gchar *__dbg = g_strdup (err->message);                               \
+  GstVideoDecoder *__dec = GST_VIDEO_DECODER (el);                      \
+  GST_WARNING_OBJECT (el, "error: %s", __dbg);                          \
+  _gst_video_decoder_error (__dec, 1,                                   \
+    err->domain, err->code,                                             \
+    NULL, __dbg, __FILE__, GST_FUNCTION, __LINE__);                     \
+  g_clear_error (&err); \
+} G_STMT_END
+
 enum
 {
     PROP_ZERO,
@@ -480,7 +490,7 @@ format_error:
     GST_VIDEO_DECODER_STREAM_UNLOCK (self);
     return;
 failed_release:
-    GST_ELEMENT_ERROR_FROM_ERROR (self, err);
+    GST_VIDEO_DECODER_ERROR_FROM_ERROR (self, err);
     gst_pad_push_event (GST_VIDEO_DECODER_SRC_PAD (self), gst_event_new_eos ());
     gst_pad_pause_task (GST_VIDEO_DECODER_SRC_PAD (self));
     priv->downstream_flow_ret = GST_FLOW_ERROR;
@@ -897,7 +907,7 @@ invalid_buffer_index:
     gst_video_codec_frame_unref (frame);
     return GST_FLOW_ERROR;
 dequeue_error:
-    GST_ELEMENT_ERROR_FROM_ERROR (self, err);
+    GST_VIDEO_DECODER_ERROR_FROM_ERROR (self, err);
     if (minfo.data)
       gst_buffer_unmap (frame->input_buffer, &minfo);
     gst_video_codec_frame_unref (frame);
