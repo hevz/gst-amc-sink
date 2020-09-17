@@ -132,8 +132,6 @@ gst_amc_video_decoder_set_property (GObject *obj, guint id,
     GstAmcVideoDecoder *self = GST_AMC_VIDEO_DECODER (obj);
     GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
 
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     switch (id) {
     case PROP_SURFACE:
         {
@@ -158,8 +156,6 @@ gst_amc_video_decoder_get_property (GObject *obj, guint id,
 {
     GstAmcVideoDecoder *self = GST_AMC_VIDEO_DECODER (obj);
     GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
 
     switch (id) {
     case PROP_SURFACE:
