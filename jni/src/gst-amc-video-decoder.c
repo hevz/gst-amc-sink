@@ -8,6 +8,8 @@
  ============================================================================
  */
 
+#include <string.h>
+
 #include "gst-amc-video-decoder.h"
 #include "gst-amc.h"
 #include "gst-amc-sink.h"
@@ -90,6 +92,8 @@ GST_STATIC_PAD_TEMPLATE (
 
 #define gst_amc_video_decoder_parent_class parent_class
 G_DEFINE_TYPE_WITH_PRIVATE (GstAmcVideoDecoder, gst_amc_video_decoder, GST_TYPE_VIDEO_DECODER);
+
+extern void *orc_memcpy (void *dest, const void *src, size_t n);
 
 static GstStateChangeReturn
 gst_amc_video_decoder_change_state (GstElement * element, GstStateChange transition);
@@ -901,7 +905,7 @@ downstream_error:
     return priv->downstream_flow_ret;
 invalid_buffer_index:
     GST_ELEMENT_ERROR (self, LIBRARY, FAILED, (NULL),
-                ("Invalid input buffer index %d of %d", idx, priv->n_input_buffers));
+                ("Invalid input buffer index %d of %zu", idx, priv->n_input_buffers));
     if (minfo.data)
       gst_buffer_unmap (frame->input_buffer, &minfo);
     gst_video_codec_frame_unref (frame);
@@ -996,7 +1000,7 @@ gst_amc_video_decoder_drain (GstAmcVideoDecoder * self, gboolean at_eos)
         g_mutex_unlock (&priv->drain_lock);
         GST_VIDEO_DECODER_STREAM_LOCK (self);
     } else if (idx >= priv->n_input_buffers) {
-        GST_ERROR_OBJECT (self, "Invalid input buffer index %d of %d",
+        GST_ERROR_OBJECT (self, "Invalid input buffer index %d of %zu",
                     idx, priv->n_input_buffers);
         ret = GST_FLOW_ERROR;
     } else {
