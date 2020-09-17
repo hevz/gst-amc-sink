@@ -373,7 +373,7 @@ retry:
     GST_VIDEO_DECODER_STREAM_LOCK (self);
 
     if (idx < 0) {
-        if (priv->flushing || priv->downstream_flow_ret == GST_FLOW_FLUSHING) {
+        if (priv->flushing) {
             g_clear_error (&err);
             goto flushing;
         }
@@ -436,10 +436,11 @@ retry:
 
     if (!(outbuf = gst_amc_video_decoder_new_buffer (self, idx))) {
         if (!gst_amc_codec_release_output_buffer (priv->codec, idx, &err))
-          GST_ERROR_OBJECT (self, "Failed to release output buffer index %d", idx);
-        if (err)
-          GST_ELEMENT_WARNING_FROM_ERROR (self, err);
-        goto invalid_buffer;
+            GST_ERROR_OBJECT (self, "Failed to release output buffer index %d", idx);
+        if (err && !priv->flushing)
+            GST_ELEMENT_WARNING_FROM_ERROR (self, err);
+        g_clear_error (&err);
+        goto flow_error;
     }
 
     GST_BUFFER_PTS (outbuf) = gst_util_uint64_scale (buffer_info.presentation_time_us, GST_USECOND, 1);
@@ -519,14 +520,6 @@ flow_error:
         GST_DEBUG_OBJECT (self, "Flushing -- stopping task");
         gst_pad_pause_task (GST_VIDEO_DECODER_SRC_PAD (self));
     }
-    GST_VIDEO_DECODER_STREAM_UNLOCK (self);
-    return;
-
-invalid_buffer:
-    GST_ELEMENT_ERROR (self, LIBRARY, SETTINGS, (NULL), ("Invalid sized input buffer"));
-    gst_pad_push_event (GST_VIDEO_DECODER_SRC_PAD (self), gst_event_new_eos ());
-    gst_pad_pause_task (GST_VIDEO_DECODER_SRC_PAD (self));
-    priv->downstream_flow_ret = GST_FLOW_NOT_NEGOTIATED;
     GST_VIDEO_DECODER_STREAM_UNLOCK (self);
     return;
 }
@@ -810,7 +803,7 @@ gst_amc_video_decoder_handle_frame (GstVideoDecoder * decoder,
         idx = gst_amc_codec_dequeue_input_buffer (priv->codec, 100000, &err);
         GST_VIDEO_DECODER_STREAM_LOCK (self);
 
-        if (idx < 0) {
+        if (idx < 0 || priv->downstream_flow_ret == GST_FLOW_FLUSHING) {
             if (priv->flushing) {
                 g_clear_error (&err);
                 goto flushing;
@@ -835,8 +828,11 @@ gst_amc_video_decoder_handle_frame (GstVideoDecoder * decoder,
         if (idx >= priv->n_input_buffers)
           goto invalid_buffer_index;
 
-        if (priv->flushing)
-          goto flushing;
+        if (priv->flushing) {
+            memset (&buffer_info, 0, sizeof (buffer_info));
+            gst_amc_codec_queue_input_buffer (priv->codec, idx, &buffer_info, NULL);
+            goto flushing;
+        }
 
         if (priv->downstream_flow_ret != GST_FLOW_OK) {
             memset (&buffer_info, 0, sizeof (buffer_info));
