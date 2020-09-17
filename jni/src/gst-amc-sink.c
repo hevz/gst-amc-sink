@@ -39,16 +39,12 @@ G_DEFINE_TYPE_WITH_PRIVATE (GstAmcSink, gst_amc_sink, GST_TYPE_BASE_SINK);
 static void
 gst_amc_sink_dispose (GObject *obj)
 {
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
 
 static void
 gst_amc_sink_finalize (GObject *obj)
 {
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
 
@@ -57,16 +53,12 @@ gst_amc_sink_constructor (GType type,
             guint n,
             GObjectConstructParam *param)
 {
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     return G_OBJECT_CLASS (parent_class)->constructor (type, n, param);
 }
 
 static void
 gst_amc_sink_constructed (GObject *obj)
 {
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     G_OBJECT_CLASS (parent_class)->constructed (obj);
 }
 
@@ -74,11 +66,6 @@ static void
 gst_amc_sink_set_property (GObject *obj, guint id,
             const GValue *value, GParamSpec *pspec)
 {
-    //GstAmcSink *self = GST_AMC_SINK (obj);
-    //GstAmcSinkPrivate *priv = GST_AMC_SINK_GET_PRIVATE (self);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     switch (id) {
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, id, pspec);
@@ -90,11 +77,6 @@ static void
 gst_amc_sink_get_property (GObject *obj, guint id,
             GValue *value, GParamSpec *pspec)
 {
-    //GstAmcSink *self = GST_AMC_SINK (obj);
-    //GstAmcSinkPrivate *priv = GST_AMC_SINK_GET_PRIVATE (self);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     switch (id) {
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, id, pspec);
@@ -108,8 +90,6 @@ gst_amc_sink_class_init (GstAmcSinkClass *klass)
     GObjectClass *obj_class = G_OBJECT_CLASS (klass);
     GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
     GstBaseSinkClass *base_sink_class = GST_BASE_SINK_CLASS (klass);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
 
     obj_class->constructor = gst_amc_sink_constructor;
     obj_class->constructed = gst_amc_sink_constructed;
@@ -135,30 +115,17 @@ gst_amc_sink_class_init (GstAmcSinkClass *klass)
 static void
 gst_amc_sink_init (GstAmcSink *self)
 {
-    //GstAmcSinkPrivate *priv = GST_AMC_SINK_GET_PRIVATE (self);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
 }
 
 static gboolean
 gst_amc_sink_start (GstBaseSink *base_sink)
 {
-    //GstAmcSink *self = GST_AMC_SINK (base_sink);
-    //GstAmcSinkPrivate *priv = GST_AMC_SINK_GET_PRIVATE (self);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     return TRUE;
 }
 
 static gboolean
 gst_amc_sink_stop (GstBaseSink *base_sink)
 {
-    //GstAmcSink *self = GST_AMC_SINK (base_sink);
-    //GstAmcSinkPrivate *priv = GST_AMC_SINK_GET_PRIVATE (self);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     return TRUE;
 }
 
@@ -167,12 +134,9 @@ gst_amc_sink_render (GstBaseSink *base_sink,
             GstBuffer *buffer)
 {
     GstAmcSink *self = GST_AMC_SINK (base_sink);
-    //GstAmcSinkPrivate *priv = GST_AMC_SINK_GET_PRIVATE (self);
     GstMapInfo map_info;
     GstAmcSinkBufferData *buffer_data;
     GError *error = NULL;
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
 
     if (!gst_buffer_map (buffer, &map_info, GST_MAP_READ))
       return GST_FLOW_ERROR;
@@ -189,4 +153,3 @@ gst_amc_sink_render (GstBaseSink *base_sink,
 }
 
 /* vim:set tabstop=4 softtabstop=4 shiftwidth=4 expandtab: */
-
