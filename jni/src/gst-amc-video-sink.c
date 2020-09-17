@@ -45,16 +45,12 @@ G_DEFINE_TYPE_WITH_PRIVATE (GstAmcVideoSink, gst_amc_video_sink, GST_TYPE_BIN);
 static void
 gst_amc_video_sink_dispose (GObject *obj)
 {
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
 
 static void
 gst_amc_video_sink_finalize (GObject *obj)
 {
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
 
@@ -63,8 +59,6 @@ gst_amc_video_sink_constructor (GType type,
             guint n,
             GObjectConstructParam *param)
 {
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     return G_OBJECT_CLASS (parent_class)->constructor (type, n, param);
 }
 
@@ -73,8 +67,6 @@ gst_amc_video_sink_constructed (GObject *obj)
 {
     GstAmcVideoSink *self = GST_AMC_VIDEO_SINK (obj);
     GstAmcVideoSinkPrivate *priv = GST_AMC_VIDEO_SINK_GET_PRIVATE (self);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
 
     G_OBJECT_CLASS (parent_class)->constructed (obj);
 }
@@ -85,8 +77,6 @@ gst_amc_video_sink_set_property (GObject *obj, guint id,
 {
     GstAmcVideoSink *self = GST_AMC_VIDEO_SINK (obj);
     GstAmcVideoSinkPrivate *priv = GST_AMC_VIDEO_SINK_GET_PRIVATE (self);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
 
     switch (id) {
     case PROP_SURFACE:
@@ -105,8 +95,6 @@ gst_amc_video_sink_get_property (GObject *obj, guint id,
     GstAmcVideoSink *self = GST_AMC_VIDEO_SINK (obj);
     GstAmcVideoSinkPrivate *priv = GST_AMC_VIDEO_SINK_GET_PRIVATE (self);
 
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     switch (id) {
     case PROP_SURFACE:
         g_value_set_pointer (value, priv->surface);
@@ -122,8 +110,6 @@ gst_amc_video_sink_class_init (GstAmcVideoSinkClass *klass)
 {
     GObjectClass *obj_class = G_OBJECT_CLASS (klass);
     GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
 
     obj_class->constructor = gst_amc_video_sink_constructor;
     obj_class->constructed = gst_amc_video_sink_constructed;
@@ -152,8 +138,6 @@ gst_amc_video_sink_init (GstAmcVideoSink *self)
     GstPad *pad;
     GstPad *gpad;
     GstPadTemplate *pad_tmpl;
-
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
 
     priv->video_decoder = g_object_new (GST_TYPE_AMC_VIDEO_DECODER,
                 "name", "amc-video-sink-decoder", "surface", priv->surface, NULL);
