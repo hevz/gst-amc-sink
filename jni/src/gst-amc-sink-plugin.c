@@ -31,8 +31,6 @@ GST_PLUGIN_DEFINE (
 static gboolean
 plugin_init (GstPlugin *plugin)
 {
-    g_debug ("%s:%d[%s]", __FILE__, __LINE__, __FUNCTION__);
-
     if (!gst_amc_init ())
       return FALSE;
 
