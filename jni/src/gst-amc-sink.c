@@ -15,6 +15,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_amc_sink_debug);
 
 static gboolean gst_amc_sink_start (GstBaseSink *base_sink);
 static gboolean gst_amc_sink_stop (GstBaseSink *base_sink);
+static void gst_amc_sink_get_times (GstBaseSink * base_sink, GstBuffer * buf,
+            GstClockTime * start, GstClockTime * end);
 static GstFlowReturn gst_amc_sink_render (GstBaseSink *base_sink,
             GstBuffer *buffer);
 
@@ -66,6 +68,7 @@ gst_amc_sink_class_init (GstAmcSinkClass *klass)
 
     base_sink_class->start = GST_DEBUG_FUNCPTR (gst_amc_sink_start);
     base_sink_class->stop = GST_DEBUG_FUNCPTR (gst_amc_sink_stop);
+    base_sink_class->get_times = GST_DEBUG_FUNCPTR (gst_amc_sink_get_times);
     base_sink_class->render = GST_DEBUG_FUNCPTR (gst_amc_sink_render);
 
     gst_element_class_add_pad_template (element_class,
@@ -93,6 +96,19 @@ static gboolean
 gst_amc_sink_stop (GstBaseSink *base_sink)
 {
     return TRUE;
+}
+
+static void
+gst_amc_sink_get_times (GstBaseSink * base_sink, GstBuffer * buf,
+            GstClockTime * start, GstClockTime * end)
+{
+    if (GST_BUFFER_TIMESTAMP_IS_VALID (buf)) {
+        *start = GST_BUFFER_TIMESTAMP (buf);
+        if (GST_BUFFER_DURATION_IS_VALID (buf))
+            *end = *start + GST_BUFFER_DURATION (buf);
+        else
+            *end = GST_CLOCK_TIME_NONE;
+    }
 }
 
 static GstFlowReturn
