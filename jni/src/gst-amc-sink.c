@@ -13,14 +13,6 @@
 GST_DEBUG_CATEGORY_STATIC (gst_amc_sink_debug);
 #define GST_CAT_DEFAULT gst_amc_sink_debug
 
-#define GST_AMC_SINK_GET_PRIVATE(obj) (gst_amc_sink_get_instance_private(obj))
-
-typedef struct _GstAmcSinkPrivate GstAmcSinkPrivate;
-
-struct _GstAmcSinkPrivate
-{
-};
-
 static gboolean gst_amc_sink_start (GstBaseSink *base_sink);
 static gboolean gst_amc_sink_stop (GstBaseSink *base_sink);
 static GstFlowReturn gst_amc_sink_render (GstBaseSink *base_sink,
@@ -34,7 +26,7 @@ GST_STATIC_PAD_TEMPLATE (
             GST_STATIC_CAPS ("application/x-amc-direct"));
 
 #define gst_amc_sink_parent_class parent_class
-G_DEFINE_TYPE_WITH_PRIVATE (GstAmcSink, gst_amc_sink, GST_TYPE_BASE_SINK);
+G_DEFINE_TYPE (GstAmcSink, gst_amc_sink, GST_TYPE_BASE_SINK);
 
 static void
 gst_amc_sink_dispose (GObject *obj)
@@ -49,9 +41,7 @@ gst_amc_sink_finalize (GObject *obj)
 }
 
 static GObject *
-gst_amc_sink_constructor (GType type,
-            guint n,
-            GObjectConstructParam *param)
+gst_amc_sink_constructor (GType type, guint n, GObjectConstructParam *param)
 {
     return G_OBJECT_CLASS (parent_class)->constructor (type, n, param);
 }
@@ -63,28 +53,6 @@ gst_amc_sink_constructed (GObject *obj)
 }
 
 static void
-gst_amc_sink_set_property (GObject *obj, guint id,
-            const GValue *value, GParamSpec *pspec)
-{
-    switch (id) {
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, id, pspec);
-        break;
-    }
-}
-
-static void
-gst_amc_sink_get_property (GObject *obj, guint id,
-            GValue *value, GParamSpec *pspec)
-{
-    switch (id) {
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, id, pspec);
-        break;
-    }
-}
-
-static void
 gst_amc_sink_class_init (GstAmcSinkClass *klass)
 {
     GObjectClass *obj_class = G_OBJECT_CLASS (klass);
@@ -93,8 +61,6 @@ gst_amc_sink_class_init (GstAmcSinkClass *klass)
 
     obj_class->constructor = gst_amc_sink_constructor;
     obj_class->constructed = gst_amc_sink_constructed;
-    obj_class->set_property = gst_amc_sink_set_property;
-    obj_class->get_property = gst_amc_sink_get_property;
     obj_class->dispose = gst_amc_sink_dispose;
     obj_class->finalize = gst_amc_sink_finalize;
 
