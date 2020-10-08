@@ -84,6 +84,8 @@ gst_amc_sink_class_init (GstAmcSinkClass *klass)
 static void
 gst_amc_sink_init (GstAmcSink *self)
 {
+    gst_base_sink_set_max_lateness (GST_BASE_SINK (self), 80 * GST_MSECOND);
+    gst_base_sink_set_qos_enabled (GST_BASE_SINK (self), TRUE);
 }
 
 static gboolean
