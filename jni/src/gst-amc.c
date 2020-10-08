@@ -465,7 +465,7 @@ gst_amc_codec_queue_input_buffer (GstAmcCodec * codec, gint index,
 
 gboolean
 gst_amc_codec_release_output_buffer (GstAmcCodec * codec, gint index,
-    GError ** err)
+    gboolean render, GError ** err)
 {
   JNIEnv *env;
 
@@ -474,7 +474,7 @@ gst_amc_codec_release_output_buffer (GstAmcCodec * codec, gint index,
   env = gst_amc_jni_get_env ();
 
   return gst_amc_jni_call_void_method (env, err, codec->object,
-      media_codec.release_output_buffer, index, JNI_TRUE);
+      media_codec.release_output_buffer, index, render ? JNI_TRUE : JNI_FALSE);
 }
 
 GstAmcFormat *
