@@ -12,7 +12,6 @@
 
 #include "gst-amc-video-decoder.h"
 #include "gst-amc.h"
-#include "gst-amc-sink.h"
 #include "gst-jni-utils.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_amc_video_decoder_debug);
@@ -35,9 +34,16 @@ enum
     N_PROPERTIES
 };
 
+typedef struct _BufferIdentification BufferIdentification;
 typedef struct _GstAmcVideoDecoderPrivate GstAmcVideoDecoderPrivate;
+typedef struct _GstAmcVideoDecoderBufferData GstAmcVideoDecoderBufferData;
 
 #define GST_AMC_VIDEO_DECODER_GET_PRIVATE(obj) (gst_amc_video_decoder_get_instance_private(obj))
+
+struct _BufferIdentification
+{
+    guint64 timestamp;
+};
 
 struct _GstAmcVideoDecoderPrivate
 {
@@ -74,6 +80,12 @@ struct _GstAmcVideoDecoderPrivate
     gint height;
 };
 
+struct _GstAmcVideoDecoderBufferData
+{
+    GstAmcCodec *codec;
+    gint index;
+};
+
 static GstStaticPadTemplate gst_amc_video_decoder_sink_template =
 GST_STATIC_PAD_TEMPLATE (
             "sink",
@@ -88,7 +100,7 @@ GST_STATIC_PAD_TEMPLATE (
             "src",
             GST_PAD_SRC,
             GST_PAD_ALWAYS,
-            GST_STATIC_CAPS ("application/x-amc-direct"));
+            GST_STATIC_CAPS ("video/x-amc-direct"));
 
 #define gst_amc_video_decoder_parent_class parent_class
 G_DEFINE_TYPE_WITH_PRIVATE (GstAmcVideoDecoder, gst_amc_video_decoder, GST_TYPE_VIDEO_DECODER);
@@ -107,6 +119,22 @@ static gboolean gst_amc_video_decoder_flush (GstVideoDecoder * decoder);
 static GstFlowReturn gst_amc_video_decoder_handle_frame (GstVideoDecoder * decoder, GstVideoCodecFrame * frame);
 static GstFlowReturn gst_amc_video_decoder_finish (GstVideoDecoder * decoder);
 static GstFlowReturn gst_amc_video_decoder_drain (GstAmcVideoDecoder * self);
+
+static BufferIdentification *
+buffer_identification_new (GstClockTime timestamp)
+{
+    BufferIdentification *id = g_slice_new (BufferIdentification);
+
+    id->timestamp = timestamp;
+
+    return id;
+}
+
+static void
+buffer_identification_free (BufferIdentification * id)
+{
+    g_slice_free (BufferIdentification, id);
+}
 
 static void
 gst_amc_video_decoder_finalize (GObject * object)
@@ -213,6 +241,7 @@ gst_amc_video_decoder_init (GstAmcVideoDecoder * self)
 {
     GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
     gst_video_decoder_set_packetized (GST_VIDEO_DECODER (self), TRUE);
+    gst_video_decoder_set_needs_format (GST_VIDEO_DECODER (self), TRUE);
 
     g_mutex_init (&priv->drain_lock);
     g_cond_init (&priv->drain_cond);
@@ -324,28 +353,145 @@ gst_amc_video_decoder_change_state (GstElement * element, GstStateChange transit
     return ret;
 }
 
+#define MAX_FRAME_DIST_TIME  (5 * GST_SECOND)
+#define MAX_FRAME_DIST_FRAMES (100)
+
+static GstVideoCodecFrame *
+_find_nearest_frame (GstAmcVideoDecoder * self, GstClockTime reference_timestamp)
+{
+    GList *l, *best_l = NULL;
+    GList *finish_frames = NULL;
+    GstVideoCodecFrame *best = NULL;
+    guint64 best_timestamp = 0;
+    guint64 best_diff = G_MAXUINT64;
+    BufferIdentification *best_id = NULL;
+    GList *frames;
+
+    frames = gst_video_decoder_get_frames (GST_VIDEO_DECODER (self));
+
+    for (l = frames; l; l = l->next) {
+        GstVideoCodecFrame *tmp = l->data;
+        BufferIdentification *id = gst_video_codec_frame_get_user_data (tmp);
+        guint64 timestamp, diff;
+
+        /* This happens for frames that were just added but
+         * which were not passed to the component yet. Ignore
+         * them here!
+         */
+        if (!id)
+            continue;
+
+        timestamp = id->timestamp;
+
+        if (timestamp > reference_timestamp)
+            diff = timestamp - reference_timestamp;
+        else
+            diff = reference_timestamp - timestamp;
+
+        if (best == NULL || diff < best_diff) {
+            best = tmp;
+            best_timestamp = timestamp;
+            best_diff = diff;
+            best_l = l;
+            best_id = id;
+
+            /* For frames without timestamp we simply take the first frame */
+            if ((reference_timestamp == 0 && timestamp == 0) || diff == 0)
+                break;
+        }
+    }
+
+    if (best_id) {
+        for (l = frames; l && l != best_l; l = l->next) {
+            GstVideoCodecFrame *tmp = l->data;
+            BufferIdentification *id = gst_video_codec_frame_get_user_data (tmp);
+            guint64 diff_time, diff_frames;
+
+            if (id->timestamp > best_timestamp)
+                break;
+
+            if (id->timestamp == 0 || best_timestamp == 0)
+                diff_time = 0;
+            else
+                diff_time = best_timestamp - id->timestamp;
+            diff_frames = best->system_frame_number - tmp->system_frame_number;
+
+            if (diff_time > MAX_FRAME_DIST_TIME || diff_frames > MAX_FRAME_DIST_FRAMES) {
+                finish_frames =
+                    g_list_prepend (finish_frames, gst_video_codec_frame_ref (tmp));
+            }
+        }
+    }
+
+    if (finish_frames) {
+        g_warning ("%s: Too old frames, bug in decoder -- please file a bug",
+            GST_ELEMENT_NAME (self));
+        for (l = finish_frames; l; l = l->next)
+            gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), l->data);
+    }
+
+    if (best)
+        gst_video_codec_frame_ref (best);
+
+    g_list_foreach (frames, (GFunc) gst_video_codec_frame_unref, NULL);
+    g_list_free (frames);
+
+    return best;
+}
+
+static gboolean
+gst_amc_video_decoder_set_src_caps (GstAmcVideoDecoder * self)
+{
+    GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
+    GstVideoCodecState *state;
+    gboolean ret;
+
+    state = gst_video_decoder_set_output_state (GST_VIDEO_DECODER (self),
+                GST_VIDEO_FORMAT_ENCODED, priv->width, priv->height,
+                priv->input_state);
+    if (state->caps)
+        gst_caps_unref (state->caps);
+    state->caps = gst_static_pad_template_get_caps (&gst_amc_video_decoder_src_template);
+    ret = gst_video_decoder_negotiate (GST_VIDEO_DECODER (self));
+    gst_video_codec_state_unref (state);
+
+    return ret;
+}
+
+static void
+gst_amc_video_decoder_free_buffer (gpointer data)
+{
+    GstAmcVideoDecoderBufferData *buffer_data = data;
+    GError *error = NULL;
+
+    if (!gst_amc_codec_release_output_buffer (buffer_data->codec, buffer_data->index, &error)) {
+        GST_ERROR ("Release output buffer fail: %s", error->message);
+        g_error_free (error);
+    }
+
+    g_slice_free (GstAmcVideoDecoderBufferData, buffer_data);
+}
+
 static GstBuffer *
 gst_amc_video_decoder_new_buffer (GstAmcVideoDecoder * self, gint idx)
 {
     GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
     GstMapInfo minfo;
     GstBuffer *outbuf;
-    GstAmcSinkBufferData *buffer_data;
+    GstAmcVideoDecoderBufferData *buffer_data;
+    const gsize buffer_data_size = sizeof (GstAmcVideoDecoderBufferData);
 
-    outbuf = gst_buffer_new_allocate (NULL, sizeof (GstAmcSinkBufferData), NULL);
-    if (!outbuf)
-      return NULL;
-
-    if (!gst_buffer_map (outbuf, &minfo, GST_MAP_WRITE)) {
-        gst_buffer_unref (outbuf);
+    buffer_data = g_slice_new (GstAmcVideoDecoderBufferData);
+    if (!buffer_data)
         return NULL;
-    }
 
-    buffer_data = (GstAmcSinkBufferData *) minfo.data;
     buffer_data->codec = priv->codec;
     buffer_data->index = idx;
 
-    gst_buffer_unmap (outbuf, &minfo);
+    outbuf = gst_buffer_new_wrapped_full (0, buffer_data, buffer_data_size, 0,
+                buffer_data_size, buffer_data, gst_amc_video_decoder_free_buffer);
+    if (!outbuf)
+        g_slice_free (GstAmcVideoDecoderBufferData, buffer_data);
 
     return outbuf;
 }
@@ -355,12 +501,13 @@ gst_amc_video_decoder_loop (GstAmcVideoDecoder * self)
 {
     GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
     GstFlowReturn flow_ret = GST_FLOW_OK;
-    GstClockTimeDiff deadline;
-    gboolean is_eos;
+    gboolean release_buffer = TRUE;
     GstAmcBufferInfo buffer_info;
-    gint idx;
-    GstBuffer *outbuf;
+    GstVideoCodecFrame *frame;
     GError *err = NULL;
+    GstBuffer *outbuf;
+    gboolean is_eos;
+    gint idx;
 
     GST_VIDEO_DECODER_STREAM_LOCK (self);
 
@@ -404,6 +551,9 @@ retry:
             g_free (format_string);
             gst_amc_format_free (format);
 
+            if (!gst_amc_video_decoder_set_src_caps (self))
+                goto format_error;
+
             goto retry;
             break;
         }
@@ -411,7 +561,7 @@ retry:
             GST_DEBUG_OBJECT (self, "Dequeueing output buffer timed out");
             goto retry;
             break;
-            case G_MININT:
+        case G_MININT:
             GST_ERROR_OBJECT (self, "Failure dequeueing output buffer");
             goto dequeue_error;
             break;
@@ -427,24 +577,45 @@ retry:
                 " flags 0x%08x", idx, buffer_info.size, buffer_info.presentation_time_us,
                 buffer_info.flags);
 
+    frame = _find_nearest_frame (self,
+                gst_util_uint64_scale (buffer_info.presentation_time_us, GST_USECOND, 1));
+
     is_eos = !!(buffer_info.flags & BUFFER_FLAG_END_OF_STREAM);
 
-    /* This sometimes happens at EOS or if the input is not properly framed,
-    * let's handle it gracefully by allocating a new buffer for the current
-    * caps and filling it
-    */
+    if (frame && (gst_video_decoder_get_max_decode_time (GST_VIDEO_DECODER (self), frame)) < 0) {
+        flow_ret = gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
+    } else if (buffer_info.size > 0) {
+        if (!(outbuf = gst_amc_video_decoder_new_buffer (self, idx))) {
+            if (!gst_amc_codec_release_output_buffer (priv->codec, idx, &err))
+                GST_ERROR_OBJECT (self, "Failed to release output buffer index %d", idx);
+            if (err && !priv->flushing)
+                GST_ELEMENT_WARNING_FROM_ERROR (self, err);
+            g_clear_error (&err);
+            goto flow_error;
+        }
 
-    if (!(outbuf = gst_amc_video_decoder_new_buffer (self, idx))) {
-        if (!gst_amc_codec_release_output_buffer (priv->codec, idx, &err))
-            GST_ERROR_OBJECT (self, "Failed to release output buffer index %d", idx);
-        if (err && !priv->flushing)
-            GST_ELEMENT_WARNING_FROM_ERROR (self, err);
-        g_clear_error (&err);
-        goto flow_error;
+        if (frame) {
+            frame->output_buffer = outbuf;
+            gst_video_decoder_finish_frame (GST_VIDEO_DECODER (self), frame);
+        } else {
+            GST_BUFFER_PTS (outbuf) =
+                gst_util_uint64_scale (buffer_info.presentation_time_us, GST_USECOND, 1);
+            flow_ret = gst_pad_push (GST_VIDEO_DECODER_SRC_PAD (self), outbuf);
+        }
+        release_buffer = FALSE;
+    } else if (frame != NULL) {
+        flow_ret = gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
     }
 
-    GST_BUFFER_PTS (outbuf) = gst_util_uint64_scale (buffer_info.presentation_time_us, GST_USECOND, 1);
-    flow_ret = gst_pad_push (GST_VIDEO_DECODER_SRC_PAD (self), outbuf);
+    if (release_buffer) {
+        if (!gst_amc_codec_release_output_buffer (priv->codec, idx, FALSE, &err)) {
+            if (priv->flushing) {
+                g_clear_error (&err);
+                goto flushing;
+            }
+            goto failed_release;
+        }
+    }
 
     if (is_eos || flow_ret == GST_FLOW_EOS) {
         GST_VIDEO_DECODER_STREAM_UNLOCK (self);
@@ -867,6 +1038,14 @@ gst_amc_video_decoder_handle_frame (GstVideoDecoder * decoder,
         }
         if (duration != GST_CLOCK_TIME_NONE)
           priv->last_upstream_ts += duration;
+
+        if (offset == 0) {
+            BufferIdentification *id = buffer_identification_new (timestamp + timestamp_offset);
+            if (GST_VIDEO_CODEC_FRAME_IS_SYNC_POINT (frame))
+                buffer_info.flags |= BUFFER_FLAG_SYNC_FRAME;
+            gst_video_codec_frame_set_user_data (frame, id,
+                (GDestroyNotify) buffer_identification_free);
+        }
 
         offset += buffer_info.size;
         GST_DEBUG_OBJECT (self,
