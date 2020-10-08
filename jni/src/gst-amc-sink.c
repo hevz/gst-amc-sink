@@ -70,6 +70,7 @@ gst_amc_sink_class_init (GstAmcSinkClass *klass)
     base_sink_class->stop = GST_DEBUG_FUNCPTR (gst_amc_sink_stop);
     base_sink_class->get_times = GST_DEBUG_FUNCPTR (gst_amc_sink_get_times);
     base_sink_class->render = GST_DEBUG_FUNCPTR (gst_amc_sink_render);
+    base_sink_class->preroll = GST_DEBUG_FUNCPTR (gst_amc_sink_render);
 
     gst_element_class_add_pad_template (element_class,
             gst_static_pad_template_get (&gst_amc_sink_sink_template));
