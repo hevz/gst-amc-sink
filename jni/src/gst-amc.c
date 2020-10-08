@@ -29,6 +29,12 @@ GST_DEBUG_CATEGORY (gst_amc_debug);
 static struct
 {
   jclass klass;
+  jmethodID nano_time;
+} system;
+
+static struct
+{
+  jclass klass;
   jmethodID constructor;
 } java_string;
 static struct
@@ -47,6 +53,7 @@ static struct
   jmethodID queue_input_buffer;
   jmethodID release;
   jmethodID release_output_buffer;
+  jmethodID release_output_buffer_time;
   jmethodID start;
   jmethodID stop;
 } media_codec;
@@ -473,8 +480,17 @@ gst_amc_codec_release_output_buffer (GstAmcCodec * codec, gint index,
 
   env = gst_amc_jni_get_env ();
 
+  if (render) {
+    gint64 time;
+    if (gst_amc_jni_call_static_long_method (env, err, system.klass,
+                    system.nano_time, &time))
+        return gst_amc_jni_call_void_method (env, err, codec->object,
+            media_codec.release_output_buffer_time, index, time);
+    g_clear_error (err);
+  }
+
   return gst_amc_jni_call_void_method (env, err, codec->object,
-      media_codec.release_output_buffer, index, render ? JNI_TRUE : JNI_FALSE);
+      media_codec.release_output_buffer, index, JNI_FALSE);
 }
 
 GstAmcFormat *
@@ -944,6 +960,31 @@ get_java_classes (void)
     goto done;
   }
 
+  tmp = (*env)->FindClass (env, "java/lang/System");
+  if (!tmp) {
+    ret = FALSE;
+    GST_ERROR ("Failed to get system class");
+    if ((*env)->ExceptionCheck (env)) {
+      (*env)->ExceptionDescribe (env);
+      (*env)->ExceptionClear (env);
+    }
+    goto done;
+  }
+  system.klass = (*env)->NewGlobalRef (env, tmp);
+  if (!system.klass) {
+    ret = FALSE;
+    GST_ERROR ("Failed to get system class global reference");
+    if ((*env)->ExceptionCheck (env)) {
+      (*env)->ExceptionDescribe (env);
+      (*env)->ExceptionClear (env);
+    }
+    goto done;
+  }
+  (*env)->DeleteLocalRef (env, tmp);
+  tmp = NULL;
+
+  system.nano_time = (*env)->GetStaticMethodID (env, system.klass, "nanoTime", "()J");
+
   tmp = (*env)->FindClass (env, "android/media/MediaCodec");
   if (!tmp) {
     ret = FALSE;
@@ -1004,6 +1045,9 @@ get_java_classes (void)
   media_codec.release_output_buffer =
       (*env)->GetMethodID (env, media_codec.klass, "releaseOutputBuffer",
       "(IZ)V");
+  media_codec.release_output_buffer_time =
+      (*env)->GetMethodID (env, media_codec.klass, "releaseOutputBuffer",
+      "(IJ)V");
   media_codec.start =
       (*env)->GetMethodID (env, media_codec.klass, "start", "()V");
   media_codec.stop =
@@ -1022,6 +1066,7 @@ get_java_classes (void)
       !media_codec.queue_input_buffer ||
       !media_codec.release ||
       !media_codec.release_output_buffer ||
+      !media_codec.release_output_buffer_time ||
       !media_codec.start || !media_codec.stop) {
     ret = FALSE;
     GST_ERROR ("Failed to get codec methods");
