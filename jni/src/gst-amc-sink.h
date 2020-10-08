@@ -27,6 +27,7 @@ G_BEGIN_DECLS
 
 typedef struct _GstAmcSink GstAmcSink;
 typedef struct _GstAmcSinkClass GstAmcSinkClass;
+typedef struct _GstAmcSinkBufferData GstAmcSinkBufferData;
 
 struct _GstAmcSink
 {
@@ -36,6 +37,12 @@ struct _GstAmcSink
 struct _GstAmcSinkClass
 {
     GstBaseSinkClass parent_class;
+};
+
+struct _GstAmcSinkBufferData
+{
+    GstAmcCodec *codec;
+    gint index;
 };
 
 GType gst_amc_sink_get_type (void);

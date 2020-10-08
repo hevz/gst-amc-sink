@@ -115,6 +115,28 @@ static GstFlowReturn
 gst_amc_sink_render (GstBaseSink *base_sink,
             GstBuffer *buffer)
 {
+    GstAmcSink *self = GST_AMC_SINK (base_sink);
+    GstAmcSinkBufferData *buffer_data;
+    GError *error = NULL;
+    GstMapInfo map_info;
+
+    if (!gst_buffer_map (buffer, &map_info, GST_MAP_READ))
+      return GST_FLOW_ERROR;
+
+    buffer_data = (GstAmcSinkBufferData *) map_info.data;
+    if (buffer_data->codec) {
+        if (gst_amc_codec_release_output_buffer (buffer_data->codec,
+                        buffer_data->index, TRUE, &error)) {
+            buffer_data->codec = NULL;
+        } else {
+            GST_ERROR_OBJECT (self, "Release output buffer fail: %s",
+                        error->message);
+            g_error_free (error);
+        }
+    }
+
+    gst_buffer_unmap (buffer, &map_info);
+
     return GST_FLOW_OK;
 }
 
