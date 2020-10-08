@@ -25,7 +25,7 @@ GST_STATIC_PAD_TEMPLATE (
             "sink",
             GST_PAD_SINK,
             GST_PAD_ALWAYS,
-            GST_STATIC_CAPS ("application/x-amc-direct"));
+            GST_STATIC_CAPS ("video/x-amc-direct"));
 
 #define gst_amc_sink_parent_class parent_class
 G_DEFINE_TYPE (GstAmcSink, gst_amc_sink, GST_TYPE_BASE_SINK);
