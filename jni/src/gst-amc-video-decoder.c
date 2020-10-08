@@ -12,6 +12,7 @@
 
 #include "gst-amc-video-decoder.h"
 #include "gst-amc.h"
+#include "gst-amc-sink.h"
 #include "gst-jni-utils.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_amc_video_decoder_debug);
@@ -36,7 +37,6 @@ enum
 
 typedef struct _BufferIdentification BufferIdentification;
 typedef struct _GstAmcVideoDecoderPrivate GstAmcVideoDecoderPrivate;
-typedef struct _GstAmcVideoDecoderBufferData GstAmcVideoDecoderBufferData;
 
 #define GST_AMC_VIDEO_DECODER_GET_PRIVATE(obj) (gst_amc_video_decoder_get_instance_private(obj))
 
@@ -78,12 +78,6 @@ struct _GstAmcVideoDecoderPrivate
 
     gint width;
     gint height;
-};
-
-struct _GstAmcVideoDecoderBufferData
-{
-    GstAmcCodec *codec;
-    gint index;
 };
 
 static GstStaticPadTemplate gst_amc_video_decoder_sink_template =
@@ -461,15 +455,18 @@ gst_amc_video_decoder_set_src_caps (GstAmcVideoDecoder * self)
 static void
 gst_amc_video_decoder_free_buffer (gpointer data)
 {
-    GstAmcVideoDecoderBufferData *buffer_data = data;
+    GstAmcSinkBufferData *buffer_data = data;
     GError *error = NULL;
 
-    if (!gst_amc_codec_release_output_buffer (buffer_data->codec, buffer_data->index, &error)) {
-        GST_ERROR ("Release output buffer fail: %s", error->message);
-        g_error_free (error);
+    if (buffer_data->codec) {
+        if (!gst_amc_codec_release_output_buffer (buffer_data->codec, buffer_data->index,
+                        FALSE, &error)) {
+            GST_ERROR ("Release output buffer fail: %s", error->message);
+            g_error_free (error);
+        }
     }
 
-    g_slice_free (GstAmcVideoDecoderBufferData, buffer_data);
+    g_slice_free (GstAmcSinkBufferData, buffer_data);
 }
 
 static GstBuffer *
@@ -478,10 +475,10 @@ gst_amc_video_decoder_new_buffer (GstAmcVideoDecoder * self, gint idx)
     GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
     GstMapInfo minfo;
     GstBuffer *outbuf;
-    GstAmcVideoDecoderBufferData *buffer_data;
-    const gsize buffer_data_size = sizeof (GstAmcVideoDecoderBufferData);
+    GstAmcSinkBufferData *buffer_data;
+    const gsize buffer_data_size = sizeof (GstAmcSinkBufferData);
 
-    buffer_data = g_slice_new (GstAmcVideoDecoderBufferData);
+    buffer_data = g_slice_new (GstAmcSinkBufferData);
     if (!buffer_data)
         return NULL;
 
@@ -491,7 +488,7 @@ gst_amc_video_decoder_new_buffer (GstAmcVideoDecoder * self, gint idx)
     outbuf = gst_buffer_new_wrapped_full (0, buffer_data, buffer_data_size, 0,
                 buffer_data_size, buffer_data, gst_amc_video_decoder_free_buffer);
     if (!outbuf)
-        g_slice_free (GstAmcVideoDecoderBufferData, buffer_data);
+        g_slice_free (GstAmcSinkBufferData, buffer_data);
 
     return outbuf;
 }
@@ -586,7 +583,7 @@ retry:
         flow_ret = gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
     } else if (buffer_info.size > 0) {
         if (!(outbuf = gst_amc_video_decoder_new_buffer (self, idx))) {
-            if (!gst_amc_codec_release_output_buffer (priv->codec, idx, &err))
+            if (!gst_amc_codec_release_output_buffer (priv->codec, idx, FALSE, &err))
                 GST_ERROR_OBJECT (self, "Failed to release output buffer index %d", idx);
             if (err && !priv->flushing)
                 GST_ELEMENT_WARNING_FROM_ERROR (self, err);
