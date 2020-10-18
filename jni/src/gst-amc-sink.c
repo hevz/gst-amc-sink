@@ -27,6 +27,7 @@ GST_STATIC_PAD_TEMPLATE (
             GST_PAD_ALWAYS,
             GST_STATIC_CAPS ("video/x-amc-direct"));
 
+#define PTS_DELTA (40 * GST_MSECOND)
 #define gst_amc_sink_parent_class parent_class
 G_DEFINE_TYPE (GstAmcSink, gst_amc_sink, GST_TYPE_BASE_SINK);
 
@@ -106,7 +107,7 @@ gst_amc_sink_get_times (GstBaseSink * base_sink, GstBuffer * buf,
             GstClockTime * start, GstClockTime * end)
 {
     if (GST_BUFFER_TIMESTAMP_IS_VALID (buf)) {
-        *start = GST_BUFFER_TIMESTAMP (buf);
+        *start = GST_BUFFER_TIMESTAMP (buf) - PTS_DELTA;
         if (GST_BUFFER_DURATION_IS_VALID (buf))
             *end = *start + GST_BUFFER_DURATION (buf);
         else
@@ -129,7 +130,7 @@ gst_amc_sink_render (GstBaseSink *base_sink,
     buffer_data = (GstAmcSinkBufferData *) map_info.data;
     if (buffer_data->codec) {
         if (gst_amc_codec_release_output_buffer (buffer_data->codec,
-                        buffer_data->index, TRUE, 0, &error)) {
+                        buffer_data->index, TRUE, PTS_DELTA, &error)) {
             buffer_data->codec = NULL;
         } else {
             GST_ERROR_OBJECT (self, "Release output buffer fail: %s",
