@@ -129,7 +129,7 @@ gst_amc_sink_render (GstBaseSink *base_sink,
     buffer_data = (GstAmcSinkBufferData *) map_info.data;
     if (buffer_data->codec) {
         if (gst_amc_codec_release_output_buffer (buffer_data->codec,
-                        buffer_data->index, TRUE, &error)) {
+                        buffer_data->index, TRUE, 0, &error)) {
             buffer_data->codec = NULL;
         } else {
             GST_ERROR_OBJECT (self, "Release output buffer fail: %s",
