@@ -460,7 +460,7 @@ gst_amc_video_decoder_free_buffer (gpointer data)
 
     if (buffer_data->codec) {
         if (!gst_amc_codec_release_output_buffer (buffer_data->codec, buffer_data->index,
-                        FALSE, &error)) {
+                        FALSE, 0, &error)) {
             GST_ERROR ("Release output buffer fail: %s", error->message);
             g_error_free (error);
         }
@@ -583,7 +583,7 @@ retry:
         flow_ret = gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
     } else if (buffer_info.size > 0) {
         if (!(outbuf = gst_amc_video_decoder_new_buffer (self, idx))) {
-            if (!gst_amc_codec_release_output_buffer (priv->codec, idx, FALSE, &err))
+            if (!gst_amc_codec_release_output_buffer (priv->codec, idx, FALSE, 0, &err))
                 GST_ERROR_OBJECT (self, "Failed to release output buffer index %d", idx);
             if (err && !priv->flushing)
                 GST_ELEMENT_WARNING_FROM_ERROR (self, err);
@@ -605,7 +605,7 @@ retry:
     }
 
     if (release_buffer) {
-        if (!gst_amc_codec_release_output_buffer (priv->codec, idx, FALSE, &err)) {
+        if (!gst_amc_codec_release_output_buffer (priv->codec, idx, FALSE, 0, &err)) {
             if (priv->flushing) {
                 g_clear_error (&err);
                 goto flushing;
