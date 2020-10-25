@@ -18,7 +18,6 @@ GST_DEBUG_CATEGORY_STATIC (gst_amc_video_sink_debug);
 enum
 {
     PROP_ZERO,
-    PROP_SURFACE,
     N_PROPERTIES
 };
 
@@ -28,7 +27,6 @@ typedef struct _GstAmcVideoSinkPrivate GstAmcVideoSinkPrivate;
 
 struct _GstAmcVideoSinkPrivate
 {
-    jobject surface;
     GstElement *video_decoder;
 };
 
@@ -72,40 +70,6 @@ gst_amc_video_sink_constructed (GObject *obj)
 }
 
 static void
-gst_amc_video_sink_set_property (GObject *obj, guint id,
-            const GValue *value, GParamSpec *pspec)
-{
-    GstAmcVideoSink *self = GST_AMC_VIDEO_SINK (obj);
-    GstAmcVideoSinkPrivate *priv = GST_AMC_VIDEO_SINK_GET_PRIVATE (self);
-
-    switch (id) {
-    case PROP_SURFACE:
-        priv->surface = g_value_get_pointer (value);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, id, pspec);
-        break;
-    }
-}
-
-static void
-gst_amc_video_sink_get_property (GObject *obj, guint id,
-            GValue *value, GParamSpec *pspec)
-{
-    GstAmcVideoSink *self = GST_AMC_VIDEO_SINK (obj);
-    GstAmcVideoSinkPrivate *priv = GST_AMC_VIDEO_SINK_GET_PRIVATE (self);
-
-    switch (id) {
-    case PROP_SURFACE:
-        g_value_set_pointer (value, priv->surface);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, id, pspec);
-        break;
-    }
-}
-
-static void
 gst_amc_video_sink_class_init (GstAmcVideoSinkClass *klass)
 {
     GObjectClass *obj_class = G_OBJECT_CLASS (klass);
@@ -113,14 +77,8 @@ gst_amc_video_sink_class_init (GstAmcVideoSinkClass *klass)
 
     obj_class->constructor = gst_amc_video_sink_constructor;
     obj_class->constructed = gst_amc_video_sink_constructed;
-    obj_class->set_property = gst_amc_video_sink_set_property;
-    obj_class->get_property = gst_amc_video_sink_get_property;
     obj_class->dispose = gst_amc_video_sink_dispose;
     obj_class->finalize = gst_amc_video_sink_finalize;
-
-    g_object_class_install_property (obj_class, PROP_SURFACE,
-                g_param_spec_pointer ("surface", "Android surface",
-                    "The video display on the surface.", G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
 
     gst_element_class_set_static_metadata (element_class, "Amc Video Sink",
             "Sink/Video/Amc",
@@ -140,8 +98,7 @@ gst_amc_video_sink_init (GstAmcVideoSink *self)
     GstPadTemplate *pad_tmpl;
 
     priv->video_decoder = g_object_new (GST_TYPE_AMC_VIDEO_DECODER,
-                "name", "amc-video-sink-decoder", "surface", priv->surface, NULL);
-    g_object_bind_property (self, "surface", priv->video_decoder, "surface", G_BINDING_DEFAULT);
+                "name", "amc-video-sink-decoder", NULL);
     sink = g_object_new (GST_TYPE_AMC_SINK,
                 "name", "amc-video-sink-sink", NULL);
 
