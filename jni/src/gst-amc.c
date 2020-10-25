@@ -912,13 +912,11 @@ done:
 }
 
 static gboolean
-get_java_classes (void)
+gst_amc_codec_static_init (void)
 {
   gboolean ret = TRUE;
   JNIEnv *env;
   jclass tmp;
-
-  GST_DEBUG ("Retrieving Java classes");
 
   env = gst_amc_jni_get_env ();
 
@@ -1083,6 +1081,23 @@ get_java_classes (void)
     goto done;
   }
 
+done:
+  if (tmp)
+    (*env)->DeleteLocalRef (env, tmp);
+  tmp = NULL;
+
+  return ret;
+}
+
+static gboolean
+gst_amc_format_static_init (void)
+{
+  gboolean ret = TRUE;
+  JNIEnv *env;
+  jclass tmp;
+
+  env = gst_amc_jni_get_env ();
+
   tmp = (*env)->FindClass (env, "android/media/MediaFormat");
   if (!tmp) {
     ret = FALSE;
@@ -1171,7 +1186,10 @@ gst_amc_init (void)
   if (!gst_amc_jni_initialize ())
     return FALSE;
 
-  if (!get_java_classes ())
+  if (!gst_amc_codec_static_init ())
+    return FALSE;
+
+  if (!gst_amc_format_static_init ())
     return FALSE;
 
   return TRUE;
