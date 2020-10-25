@@ -35,11 +35,6 @@ static struct
 static struct
 {
   jclass klass;
-  jmethodID constructor;
-} java_string;
-static struct
-{
-  jclass klass;
   jmethodID configure;
   jmethodID create_by_codec_name;
   jmethodID create_decoder_by_type;
@@ -57,6 +52,7 @@ static struct
   jmethodID start;
   jmethodID stop;
 } media_codec;
+
 static struct
 {
   jclass klass;
@@ -66,6 +62,7 @@ static struct
   jfieldID presentation_time_us;
   jfieldID size;
 } media_codec_buffer_info;
+
 static struct
 {
   jclass klass;
@@ -924,41 +921,6 @@ get_java_classes (void)
   GST_DEBUG ("Retrieving Java classes");
 
   env = gst_amc_jni_get_env ();
-
-  tmp = (*env)->FindClass (env, "java/lang/String");
-  if (!tmp) {
-    ret = FALSE;
-    GST_ERROR ("Failed to get string class");
-    if ((*env)->ExceptionCheck (env)) {
-      (*env)->ExceptionDescribe (env);
-      (*env)->ExceptionClear (env);
-    }
-    goto done;
-  }
-  java_string.klass = (*env)->NewGlobalRef (env, tmp);
-  if (!java_string.klass) {
-    ret = FALSE;
-    GST_ERROR ("Failed to get string class global reference");
-    if ((*env)->ExceptionCheck (env)) {
-      (*env)->ExceptionDescribe (env);
-      (*env)->ExceptionClear (env);
-    }
-    goto done;
-  }
-  (*env)->DeleteLocalRef (env, tmp);
-  tmp = NULL;
-
-  java_string.constructor =
-      (*env)->GetMethodID (env, java_string.klass, "<init>", "([C)V");
-  if (!java_string.constructor) {
-    ret = FALSE;
-    GST_ERROR ("Failed to get string methods");
-    if ((*env)->ExceptionCheck (env)) {
-      (*env)->ExceptionDescribe (env);
-      (*env)->ExceptionClear (env);
-    }
-    goto done;
-  }
 
   tmp = (*env)->FindClass (env, "java/lang/System");
   if (!tmp) {
