@@ -9,6 +9,7 @@
  */
 
 #include <string.h>
+#include <gst/video/videooverlay.h>
 
 #include "gst-amc-video-decoder.h"
 #include "gst-amc.h"
@@ -31,7 +32,6 @@ GST_DEBUG_CATEGORY_STATIC (gst_amc_video_decoder_debug);
 enum
 {
     PROP_ZERO,
-    PROP_SURFACE,
     N_PROPERTIES
 };
 
@@ -96,8 +96,14 @@ GST_STATIC_PAD_TEMPLATE (
             GST_PAD_ALWAYS,
             GST_STATIC_CAPS ("video/x-amc-direct"));
 
+static void gst_amc_video_decoder_video_overlay_init (gpointer iface, gpointer iface_data);
+
 #define gst_amc_video_decoder_parent_class parent_class
-G_DEFINE_TYPE_WITH_PRIVATE (GstAmcVideoDecoder, gst_amc_video_decoder, GST_TYPE_VIDEO_DECODER);
+G_DEFINE_TYPE_WITH_CODE (GstAmcVideoDecoder, gst_amc_video_decoder,
+            GST_TYPE_VIDEO_DECODER,
+            G_IMPLEMENT_INTERFACE (GST_TYPE_VIDEO_OVERLAY,
+                gst_amc_video_decoder_video_overlay_init);
+            G_ADD_PRIVATE (GstAmcVideoDecoder));
 
 extern void *orc_memcpy (void *dest, const void *src, size_t n);
 
@@ -148,48 +154,6 @@ gst_amc_video_decoder_finalize (GObject * object)
 }
 
 static void
-gst_amc_video_decoder_set_property (GObject *obj, guint id,
-            const GValue *value, GParamSpec *pspec)
-{
-    GstAmcVideoDecoder *self = GST_AMC_VIDEO_DECODER (obj);
-    GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
-
-    switch (id) {
-    case PROP_SURFACE:
-        {
-            JNIEnv *env = gst_amc_jni_get_env ();
-            jobject surface;
-            if (priv->surface)
-              gst_amc_jni_object_unref (env, priv->surface);
-            surface = g_value_get_pointer (value);
-            if (surface)
-              priv->surface = gst_amc_jni_object_ref (env, surface);
-        }
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, id, pspec);
-        break;
-    }
-}
-
-static void
-gst_amc_video_decoder_get_property (GObject *obj, guint id,
-            GValue *value, GParamSpec *pspec)
-{
-    GstAmcVideoDecoder *self = GST_AMC_VIDEO_DECODER (obj);
-    GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
-
-    switch (id) {
-    case PROP_SURFACE:
-        g_value_set_pointer (value, priv->surface);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, id, pspec);
-        break;
-    }
-}
-
-static void
 gst_amc_video_decoder_class_init (GstAmcVideoDecoderClass * klass)
 {
     GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
@@ -198,8 +162,6 @@ gst_amc_video_decoder_class_init (GstAmcVideoDecoderClass * klass)
 
     parent_class = g_type_class_peek_parent (klass);
 
-    gobject_class->set_property = gst_amc_video_decoder_set_property;
-    gobject_class->get_property = gst_amc_video_decoder_get_property;
     gobject_class->finalize = gst_amc_video_decoder_finalize;
 
     element_class->change_state =
@@ -214,10 +176,6 @@ gst_amc_video_decoder_class_init (GstAmcVideoDecoderClass * klass)
     videodec_class->handle_frame = GST_DEBUG_FUNCPTR (gst_amc_video_decoder_handle_frame);
     videodec_class->finish = GST_DEBUG_FUNCPTR (gst_amc_video_decoder_finish);
 
-    g_object_class_install_property (gobject_class, PROP_SURFACE,
-                g_param_spec_pointer ("surface", "Android surface",
-                    "The video display on the surface.", G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
-
     gst_element_class_add_pad_template (element_class,
             gst_static_pad_template_get (&gst_amc_video_decoder_sink_template));
     gst_element_class_add_pad_template (element_class,
@@ -228,6 +186,29 @@ gst_amc_video_decoder_class_init (GstAmcVideoDecoderClass * klass)
             "Heiher <r@hev.cc>");
 
     GST_DEBUG_CATEGORY_INIT (GST_CAT_DEFAULT, "amcvideodecoder", 0, "AmcVideoDecoder");
+}
+
+static void
+gst_amc_video_decoder_video_overlay_set_window_handle (GstVideoOverlay * overlay,
+            guintptr handle)
+{
+    GstAmcVideoDecoder *self = GST_AMC_VIDEO_DECODER (overlay);
+    GstAmcVideoDecoderPrivate *priv = GST_AMC_VIDEO_DECODER_GET_PRIVATE (self);
+    JNIEnv *env = gst_amc_jni_get_env ();
+    jobject surface = (jobject) handle;
+
+    if (priv->surface)
+        gst_amc_jni_object_unref (env, priv->surface);
+
+    if (surface)
+        priv->surface = gst_amc_jni_object_ref (env, surface);
+}
+
+static void
+gst_amc_video_decoder_video_overlay_init (gpointer iface, gpointer iface_data)
+{
+    GstVideoOverlayInterface *overlay = (GstVideoOverlayInterface*) iface;
+    overlay->set_window_handle = gst_amc_video_decoder_video_overlay_set_window_handle;
 }
 
 static void
@@ -850,6 +831,9 @@ gst_amc_video_decoder_set_format (GstVideoDecoder * decoder,
       GST_ELEMENT_WARNING_FROM_ERROR (self, err);
     GST_DEBUG_OBJECT (self, "Configuring codec with format: %s", GST_STR_NULL (format_string));
     g_free (format_string);
+
+    if (!priv->surface)
+        gst_video_overlay_prepare_window_handle (GST_VIDEO_OVERLAY (decoder));
 
     if (!gst_amc_codec_configure (priv->codec, format, priv->surface, 0, &err)) {
         GST_ERROR_OBJECT (self, "Failed to configure codec");
