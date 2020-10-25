@@ -19,11 +19,23 @@
  *
  */
 
+#include <string.h>
+
 #include "gst-amc.h"
 #include "gst-jni-utils.h"
 
 GST_DEBUG_CATEGORY (gst_amc_debug);
 #define GST_CAT_DEFAULT gst_amc_debug
+
+struct _GstAmcCodecInfoHandle
+{
+  jobject object;
+};
+
+struct _GstAmcCodecCapabilitiesHandle
+{
+  jobject object;
+};
 
 /* Global cached references */
 static struct
@@ -79,6 +91,35 @@ static struct
   jmethodID get_byte_buffer;
   jmethodID set_byte_buffer;
 } media_format;
+
+static struct
+{
+  jclass klass;
+  jmethodID get_codec_count;
+  jmethodID get_codec_info_at;
+} media_codeclist;
+
+static struct
+{
+  jclass klass;
+  jmethodID get_capabilities_for_type;
+  jmethodID get_name;
+  jmethodID get_supported_types;
+  jmethodID is_encoder;
+} media_codecinfo;
+
+static struct
+{
+  jclass klass;
+  jfieldID profile_levels;
+} media_codeccapabilities;
+
+static struct
+{
+  jclass klass;
+  jfieldID level;
+  jfieldID profile;
+} media_codecprofilelevel;
 
 GstAmcCodec *
 gst_amc_codec_new (const gchar * name, GError ** err)
@@ -911,6 +952,395 @@ done:
   return ret;
 }
 
+gboolean
+gst_amc_codeclist_get_count (gint * count, GError ** err)
+{
+  JNIEnv *env;
+
+  env = gst_amc_jni_get_env ();
+
+  if (!gst_amc_jni_call_static_int_method (env, err, media_codeclist.klass,
+          media_codeclist.get_codec_count, count))
+    return FALSE;
+
+  return TRUE;
+}
+
+GstAmcCodecInfoHandle *
+gst_amc_codeclist_get_codec_info_at (gint index, GError ** err)
+{
+  GstAmcCodecInfoHandle *ret;
+  jobject object;
+  JNIEnv *env;
+
+  env = gst_amc_jni_get_env ();
+
+  if (!gst_amc_jni_call_static_object_method (env, err, media_codeclist.klass,
+          media_codeclist.get_codec_info_at, &object, index))
+    return NULL;
+
+  ret = g_new0 (GstAmcCodecInfoHandle, 1);
+  ret->object = object;
+  return ret;
+}
+
+GstCaps *
+gst_amc_codeclist_to_caps (GstAmcCodecForeachFunc func)
+{
+  GstCaps *caps = gst_caps_new_empty ();
+  GError *error = NULL;
+  gint codec_count, i;
+
+  if (!gst_amc_codeclist_get_count (&codec_count, &error)) {
+    GST_ERROR ("Failed to get number of available codecs");
+    goto done;
+  }
+
+  for (i = 0; i < codec_count; i++) {
+    GstAmcCodecInfoHandle *codec_info = NULL;
+    gchar *name_str = NULL;
+    gboolean is_encoder;
+    gchar **supported_types = NULL;
+    gsize n_supported_types;
+    gsize j;
+
+    codec_info = gst_amc_codeclist_get_codec_info_at (i, &error);
+    if (!codec_info) {
+      GST_ERROR ("Failed to get codec info %d", i);
+      goto next_codec;
+    }
+
+    name_str = gst_amc_codec_info_handle_get_name (codec_info, &error);
+    if (!name_str) {
+      GST_ERROR ("Failed to get codec name");
+      goto next_codec;
+    }
+
+    GST_INFO ("Checking codec '%s'", name_str);
+
+    /* Compatibility codec names */
+    if (strcmp (name_str, "AACEncoder") == 0 ||
+      strcmp (name_str, "OMX.google.raw.decoder") == 0) {
+      GST_INFO ("Skipping compatibility codec '%s'", name_str);
+      goto next_codec;
+    }
+
+    if (g_str_has_suffix (name_str, ".secure")) {
+      GST_INFO ("Skipping DRM codec '%s'", name_str);
+      goto next_codec;
+    }
+
+    /* FIXME: Non-Google codecs usually just don't work and hang forever
+     * or crash when not used from a process that started the Java
+     * VM via the non-public AndroidRuntime class. Can we somehow
+     * initialize all this?
+     */
+    if (gst_amc_jni_is_vm_started () &&
+      !g_str_has_prefix (name_str, "OMX.google.")) {
+      GST_INFO ("Skipping non-Google codec '%s' in standalone mode", name_str);
+      goto next_codec;
+    }
+
+    if (g_str_has_prefix (name_str, "OMX.ARICENT.")) {
+      GST_INFO ("Skipping possible broken codec '%s'", name_str);
+      goto next_codec;
+    }
+
+    if (!gst_amc_codec_info_handle_is_encoder (codec_info, &is_encoder, &error)) {
+      GST_ERROR ("Failed to detect if codec is an encoder");
+      goto next_codec;
+    }
+
+    if (is_encoder) {
+      /* Skip encoder */
+      goto next_codec;
+    }
+
+    supported_types = gst_amc_codec_info_handle_get_supported_types (codec_info,
+                &n_supported_types, &error);
+    if (!supported_types) {
+      GST_ERROR ("Failed to get supported types");
+      goto next_codec;
+    }
+
+    GST_INFO ("Codec '%s' has %" G_GSIZE_FORMAT " supported types", name_str,
+                n_supported_types);
+
+    if (n_supported_types == 0) {
+      GST_ERROR ("Codec has no supported types");
+      goto next_codec;
+    }
+
+    for (j = 0; j < n_supported_types; j++) {
+      const gchar *mime;
+      GstAmcCodecCapabilitiesHandle *capabilities = NULL;
+      GstAmcCodecProfileLevel *profile_levels;
+      gsize n_profile_levels;
+      gint k;
+
+      mime = supported_types[j];
+      GST_INFO ("Supported type '%s'", mime);
+
+      capabilities =
+          gst_amc_codec_info_handle_get_capabilities_for_type (codec_info, mime, &error);
+      if (!capabilities) {
+          GST_ERROR ("Failed to get capabilities for supported type");
+          goto next_supported_type;
+      }
+
+      profile_levels =
+          gst_amc_codec_capabilities_handle_get_profile_levels (capabilities,
+                      &n_profile_levels, &error);
+      if (error) {
+          GST_ERROR ("Failed to get profile/levels: %s", error->message);
+          goto next_supported_type;
+      }
+
+      func (caps, mime, profile_levels, n_profile_levels);
+
+next_supported_type:
+      if (capabilities)
+          gst_amc_codec_capabilities_handle_free (capabilities);
+      capabilities = NULL;
+      g_clear_error (&error);
+    }
+
+    /* Clean up of all local references we got */
+next_codec:
+    if (name_str)
+      g_free (name_str);
+    name_str = NULL;
+    if (supported_types)
+      g_strfreev (supported_types);
+    supported_types = NULL;
+    if (codec_info)
+      gst_amc_codec_info_handle_free (codec_info);
+    codec_info = NULL;
+    g_clear_error (&error);
+  }
+
+done:
+  return caps;
+}
+
+void
+gst_amc_codec_info_handle_free (GstAmcCodecInfoHandle * handle)
+{
+  JNIEnv *env;
+
+  g_return_if_fail (handle != NULL);
+
+  env = gst_amc_jni_get_env ();
+
+  if (handle->object)
+    gst_amc_jni_object_local_unref (env, handle->object);
+  g_free (handle);
+}
+
+gchar *
+gst_amc_codec_info_handle_get_name (GstAmcCodecInfoHandle * handle,
+    GError ** err)
+{
+  JNIEnv *env;
+  jstring v_str = NULL;
+
+  g_return_val_if_fail (handle != NULL, NULL);
+
+  env = gst_amc_jni_get_env ();
+
+  if (!gst_amc_jni_call_object_method (env, err, handle->object,
+          media_codecinfo.get_name, &v_str))
+    return NULL;
+
+  return gst_amc_jni_string_to_gchar (env, v_str, TRUE);
+}
+
+gboolean
+gst_amc_codec_info_handle_is_encoder (GstAmcCodecInfoHandle * handle,
+    gboolean * is_encoder, GError ** err)
+{
+  JNIEnv *env;
+
+  g_return_val_if_fail (handle != NULL, FALSE);
+  g_return_val_if_fail (is_encoder != NULL, FALSE);
+
+  env = gst_amc_jni_get_env ();
+
+  if (!gst_amc_jni_call_boolean_method (env, err, handle->object,
+          media_codecinfo.is_encoder, is_encoder))
+    return FALSE;
+
+  return TRUE;
+}
+
+gchar **
+gst_amc_codec_info_handle_get_supported_types (GstAmcCodecInfoHandle * handle,
+    gsize * length, GError ** err)
+{
+  JNIEnv *env;
+  jarray array = NULL;
+  jsize len;
+  jsize i;
+  gchar **strv = NULL;
+
+  g_return_val_if_fail (handle != NULL, NULL);
+
+  env = gst_amc_jni_get_env ();
+
+  if (!gst_amc_jni_call_object_method (env, err, handle->object,
+          media_codecinfo.get_supported_types, &array))
+    goto done;
+
+  len = (*env)->GetArrayLength (env, array);
+  if ((*env)->ExceptionCheck (env)) {
+    gst_amc_jni_set_error (env, err, GST_LIBRARY_ERROR,
+        GST_LIBRARY_ERROR_FAILED, "Failed to get array length");
+    goto done;
+  }
+
+  strv = g_new0 (gchar *, len + 1);
+  *length = len;
+
+  for (i = 0; i < len; i++) {
+    jstring string;
+
+    string = (*env)->GetObjectArrayElement (env, array, i);
+    if ((*env)->ExceptionCheck (env)) {
+      gst_amc_jni_set_error (env, err, GST_LIBRARY_ERROR,
+          GST_LIBRARY_ERROR_FAILED, "Failed to get array element");
+      g_strfreev (strv);
+      strv = NULL;
+      goto done;
+    }
+
+    strv[i] = gst_amc_jni_string_to_gchar (env, string, TRUE);
+    if (!strv[i]) {
+      gst_amc_jni_set_error (env, err, GST_LIBRARY_ERROR,
+          GST_LIBRARY_ERROR_FAILED, "Failed create string");
+      g_strfreev (strv);
+      strv = NULL;
+      goto done;
+    }
+  }
+
+done:
+  if (array)
+    (*env)->DeleteLocalRef (env, array);
+
+  return strv;
+}
+
+GstAmcCodecCapabilitiesHandle *
+gst_amc_codec_info_handle_get_capabilities_for_type (GstAmcCodecInfoHandle *
+    handle, const gchar * type, GError ** err)
+{
+  GstAmcCodecCapabilitiesHandle *ret = NULL;
+  jstring type_str;
+  jobject object;
+  JNIEnv *env;
+
+  env = gst_amc_jni_get_env ();
+
+  type_str = gst_amc_jni_string_from_gchar (env, err, FALSE, type);
+  if (!type_str)
+    goto done;
+
+  if (!gst_amc_jni_call_object_method (env, err, handle->object,
+          media_codecinfo.get_capabilities_for_type, &object, type_str))
+    goto done;
+
+  ret = g_new0 (GstAmcCodecCapabilitiesHandle, 1);
+  ret->object = object;
+
+done:
+  if (type_str)
+    gst_amc_jni_object_local_unref (env, type_str);
+
+  return ret;
+}
+
+void
+gst_amc_codec_capabilities_handle_free (GstAmcCodecCapabilitiesHandle * handle)
+{
+  JNIEnv *env;
+
+  g_return_if_fail (handle != NULL);
+
+  env = gst_amc_jni_get_env ();
+
+  if (handle->object)
+    gst_amc_jni_object_local_unref (env, handle->object);
+  g_free (handle);
+}
+
+GstAmcCodecProfileLevel *
+gst_amc_codec_capabilities_handle_get_profile_levels
+    (GstAmcCodecCapabilitiesHandle * handle, gsize * length, GError ** err)
+{
+  GstAmcCodecProfileLevel *ret = NULL;
+  JNIEnv *env;
+  jobject array = NULL;
+  jsize len;
+  jsize i;
+
+  env = gst_amc_jni_get_env ();
+
+  if (!gst_amc_jni_get_object_field (env, err, handle->object,
+          media_codeccapabilities.profile_levels, &array))
+    goto done;
+
+  len = (*env)->GetArrayLength (env, array);
+  if ((*env)->ExceptionCheck (env)) {
+    gst_amc_jni_set_error (env, err, GST_LIBRARY_ERROR,
+        GST_LIBRARY_ERROR_FAILED, "Failed to get array length");
+    goto done;
+  }
+
+  ret = g_new0 (GstAmcCodecProfileLevel, len);
+  *length = len;
+
+  for (i = 0; i < len; i++) {
+    jobject object = NULL;
+
+    object = (*env)->GetObjectArrayElement (env, array, i);
+    if ((*env)->ExceptionCheck (env)) {
+      gst_amc_jni_set_error (env, err, GST_LIBRARY_ERROR,
+          GST_LIBRARY_ERROR_FAILED, "Failed to get array element");
+      g_free (ret);
+      ret = NULL;
+      goto done;
+    }
+
+    if (!gst_amc_jni_get_int_field (env, err, object,
+            media_codecprofilelevel.level, &ret[i].level)) {
+      gst_amc_jni_set_error (env, err, GST_LIBRARY_ERROR,
+          GST_LIBRARY_ERROR_FAILED, "Failed to get level");
+      (*env)->DeleteLocalRef (env, object);
+      g_free (ret);
+      ret = NULL;
+      goto done;
+    }
+
+    if (!gst_amc_jni_get_int_field (env, err, object,
+            media_codecprofilelevel.profile, &ret[i].profile)) {
+      gst_amc_jni_set_error (env, err, GST_LIBRARY_ERROR,
+          GST_LIBRARY_ERROR_FAILED, "Failed to get profile");
+      (*env)->DeleteLocalRef (env, object);
+      g_free (ret);
+      ret = NULL;
+      goto done;
+    }
+
+    (*env)->DeleteLocalRef (env, object);
+  }
+
+done:
+  if (array)
+    (*env)->DeleteLocalRef (env, array);
+
+  return ret;
+}
+
 static gboolean
 gst_amc_codec_static_init (void)
 {
@@ -1180,6 +1610,154 @@ done:
   return ret;
 }
 
+static gboolean
+gst_amc_codeclist_static_init (void)
+{
+  JNIEnv *env;
+  GError *err = NULL;
+
+  env = gst_amc_jni_get_env ();
+
+  media_codeclist.klass =
+      gst_amc_jni_get_class (env, &err, "android/media/MediaCodecList");
+  if (!media_codeclist.klass) {
+    GST_ERROR ("Failed to get android.media.MediaCodecList class: %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codeclist.get_codec_count =
+      gst_amc_jni_get_static_method_id (env, &err, media_codeclist.klass,
+      "getCodecCount", "()I");
+  if (!media_codeclist.get_codec_count) {
+    GST_ERROR ("Failed to get android.media.MediaCodecList getCodecCount(): %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codeclist.get_codec_info_at =
+      gst_amc_jni_get_static_method_id (env, &err, media_codeclist.klass,
+      "getCodecInfoAt", "(I)Landroid/media/MediaCodecInfo;");
+  if (!media_codeclist.get_codec_count) {
+    GST_ERROR
+        ("Failed to get android.media.MediaCodecList getCodecInfoAt(): %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codecinfo.klass =
+      gst_amc_jni_get_class (env, &err, "android/media/MediaCodecInfo");
+  if (!media_codecinfo.klass) {
+    GST_ERROR ("Failed to get android.media.MediaCodecInfo class: %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codecinfo.get_capabilities_for_type =
+      gst_amc_jni_get_method_id (env, &err, media_codecinfo.klass,
+      "getCapabilitiesForType",
+      "(Ljava/lang/String;)Landroid/media/MediaCodecInfo$CodecCapabilities;");
+  if (!media_codecinfo.get_capabilities_for_type) {
+    GST_ERROR
+        ("Failed to get android.media.MediaCodecInfo getCapabilitiesForType(): %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codecinfo.get_name =
+      gst_amc_jni_get_method_id (env, &err, media_codecinfo.klass, "getName",
+      "()Ljava/lang/String;");
+  if (!media_codecinfo.get_name) {
+    GST_ERROR ("Failed to get android.media.MediaCodecInfo getName(): %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codecinfo.get_supported_types =
+      gst_amc_jni_get_method_id (env, &err, media_codecinfo.klass,
+      "getSupportedTypes", "()[Ljava/lang/String;");
+  if (!media_codecinfo.get_supported_types) {
+    GST_ERROR
+        ("Failed to get android.media.MediaCodecInfo getSupportedTypes(): %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codecinfo.is_encoder =
+      gst_amc_jni_get_method_id (env, &err, media_codecinfo.klass, "isEncoder",
+      "()Z");
+  if (!media_codecinfo.is_encoder) {
+    GST_ERROR ("Failed to get android.media.MediaCodecInfo isEncoder(): %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codeccapabilities.klass =
+      gst_amc_jni_get_class (env, &err,
+      "android/media/MediaCodecInfo$CodecCapabilities");
+  if (!media_codeccapabilities.klass) {
+    GST_ERROR
+        ("Failed to get android.media.MediaCodecInfo.CodecCapabilities class: %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codeccapabilities.profile_levels =
+      gst_amc_jni_get_field_id (env, &err, media_codeccapabilities.klass,
+      "profileLevels", "[Landroid/media/MediaCodecInfo$CodecProfileLevel;");
+  if (!media_codeccapabilities.profile_levels) {
+    GST_ERROR
+        ("Failed to get android.media.MediaCodecInfo.CodecCapabilities profileLevels: %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codecprofilelevel.klass =
+      gst_amc_jni_get_class (env, &err,
+      "android/media/MediaCodecInfo$CodecProfileLevel");
+  if (!media_codecprofilelevel.klass) {
+    GST_ERROR
+        ("Failed to get android.media.MediaCodecInfo.CodecProfileLevel class: %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codecprofilelevel.level =
+      gst_amc_jni_get_field_id (env, &err, media_codecprofilelevel.klass,
+      "level", "I");
+  if (!media_codecprofilelevel.level) {
+    GST_ERROR
+        ("Failed to get android.media.MediaCodecInfo.CodecProfileLevel level: %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  media_codecprofilelevel.profile =
+      gst_amc_jni_get_field_id (env, &err, media_codecprofilelevel.klass,
+      "profile", "I");
+  if (!media_codecprofilelevel.profile) {
+    GST_ERROR
+        ("Failed to get android.media.MediaCodecInfo.CodecProfileLevel profile: %s",
+        err->message);
+    g_clear_error (&err);
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
 gboolean
 gst_amc_init (void)
 {
@@ -1190,6 +1768,9 @@ gst_amc_init (void)
     return FALSE;
 
   if (!gst_amc_format_static_init ())
+    return FALSE;
+
+  if (!gst_amc_codeclist_static_init ())
     return FALSE;
 
   return TRUE;
