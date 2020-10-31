@@ -3,7 +3,16 @@
 GstAmcSink is an Android media codec video sink for GStreamer 1.0.
 
 **Features**
-* Decode H.264 byte-stream and Render.
+* Decode and render directly, zero copy.
+* Various encoding format support (need hardware support):
+  * H.263
+  * H.264
+  * H.265
+  * MPEGv1
+  * MPEGv2
+  * MPEGv4
+  * VP8
+  * VP9
 
 ## How to Build
 
@@ -16,6 +25,8 @@ nkd-build
 ## Pipeline
 
 ```
+playbin video-sink=amcvideosink
+
 udpsrc ! tsdemux ! h264parse ! amcvideosink
 ```
 
@@ -24,4 +35,3 @@ udpsrc ! tsdemux ! h264parse ! amcvideosink
 
 ## License
 LGPL
-
